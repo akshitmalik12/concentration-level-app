@@ -2,8 +2,6 @@ opencv-python
 mediapipe
 numpy
 matplotlib
-streamlit
-streamlit-webrtc
-plotly
-pandas
-av
+kivy
+buildozer
+cython
