@@ -552,7 +552,7 @@ while cap.isOpened():
             text_y = h // 2
             cv2.putText(frame, no_face_text, (text_x, text_y),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
-            
+
             # Show concentration even when no face detected
             draw_main_ui(frame, concentration, 0, 0, 0, False, 
                         (time.time() - session_start_time) if session_start_time else 0, w, h)
@@ -579,7 +579,7 @@ if concentration_history:
     # Count time below thresholds
     below_50 = sum(1 for c in concentration_history if c < 50)
     below_70 = sum(1 for c in concentration_history if c < 70)
-    
+
     plt.figure(figsize=(14, 8))
     
     # Main plot

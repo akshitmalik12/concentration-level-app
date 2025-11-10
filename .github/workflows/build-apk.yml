@@ -20,7 +20,18 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev build-essential
+        sudo apt-get install -y \
+          git zip unzip \
+          openjdk-17-jdk \
+          python3-pip \
+          autoconf libtool pkg-config \
+          zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
+          cmake libffi-dev libssl-dev \
+          build-essential \
+          curl wget \
+          libjpeg-dev libpng-dev \
+          libopencv-dev \
+          ant
     
     - name: Install Buildozer and dependencies
       run: |
@@ -36,16 +47,19 @@ jobs:
       id: build_apk
       run: |
         echo "Starting Buildozer build..."
+        echo "This may take 30-60+ minutes..."
+        set +e  # Don't exit on error, we want to capture the log
         buildozer android debug 2>&1 | tee build.log
         BUILD_EXIT_CODE=${PIPESTATUS[0]}
+        set -e  # Re-enable exit on error
         echo "build_exit_code=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
         if [ $BUILD_EXIT_CODE -eq 0 ]; then
           echo "✅ Build completed successfully"
         else
           echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
-          echo "Check build.log for details"
+          echo "📋 Last 50 lines of build log:"
+          tail -50 build.log || echo "Could not read build log"
         fi
-        exit $BUILD_EXIT_CODE
       timeout-minutes: 150
       continue-on-error: true
     
@@ -91,32 +105,54 @@ jobs:
         name: concentration-tracker-apk
         path: bin/*.apk
         retention-days: 90
-        if-no-files-found: error
+        if-no-files-found: warn
     
-    - name: Create Release (only if APK exists and tag is present)
-      if: steps.check_apk.outputs.apk_exists == 'true' && startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
-      with:
-        files: bin/*.apk
-        draft: false
-        prerelease: false
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Show build log summary
+      if: always() && steps.build_apk.outcome == 'failure'
+      run: |
+        echo "## 🔍 Build Error Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ -f build.log ]; then
+          echo "### Last 100 lines of build log:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -100 build.log >> $GITHUB_STEP_SUMMARY || echo "Could not read build log" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        fi
     
     - name: Build Summary
       if: always()
       run: |
         echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
+        BUILD_EXIT_CODE="${{ steps.build_apk.outputs.build_exit_code }}"
         if [ "${{ steps.check_apk.outputs.apk_exists }}" == "true" ]; then
           echo "✅ **APK built successfully!**" >> $GITHUB_STEP_SUMMARY
           echo "📦 Download from Artifacts section" >> $GITHUB_STEP_SUMMARY
         else
-          echo "❌ **APK build failed**" >> $GITHUB_STEP_SUMMARY
-          echo "📋 Check build-log artifact for details" >> $GITHUB_STEP_SUMMARY
+          echo "❌ **APK build failed** (Exit code: $BUILD_EXIT_CODE)" >> $GITHUB_STEP_SUMMARY
+          echo "📋 Check build-log artifact for full details" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Common Issues:" >> $GITHUB_STEP_SUMMARY
-          echo "- OpenCV/MediaPipe may need custom Android recipes" >> $GITHUB_STEP_SUMMARY
-          echo "- Check build logs for specific errors" >> $GITHUB_STEP_SUMMARY
+          echo "- **OpenCV/MediaPipe**: These require custom Python-for-Android recipes" >> $GITHUB_STEP_SUMMARY
+          echo "- **NDK version**: May need specific Android NDK version" >> $GITHUB_STEP_SUMMARY
+          echo "- **Memory**: Build may run out of memory (try increasing timeout)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dependencies**: Check if all system dependencies are installed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the build-log artifact" >> $GITHUB_STEP_SUMMARY
+          echo "2. Search for 'ERROR' or 'FAILED' in the log" >> $GITHUB_STEP_SUMMARY
+          echo "3. Check Python-for-Android recipes for OpenCV/MediaPipe" >> $GITHUB_STEP_SUMMARY
         fi
+    
+    - name: Fail job if build failed
+      if: steps.build_apk.outputs.build_exit_code != '0' && steps.check_apk.outputs.apk_exists != 'true'
+      run: |
+        echo "❌ Build failed with exit code ${{ steps.build_apk.outputs.build_exit_code }}"
+        echo "📋 See build-log artifact for full error details"
+        echo ""
+        echo "Common causes:"
+        echo "- OpenCV/MediaPipe require custom Python-for-Android recipes"
+        echo "- Missing system dependencies"
+        echo "- NDK version incompatibility"
+        echo "- Build timeout or memory issues"
+        exit 1
