@@ -33,8 +33,19 @@ jobs:
         fi
     
     - name: Build APK
+      id: build_apk
       run: |
-        buildozer android debug 2>&1 | tee build.log || true
+        echo "Starting Buildozer build..."
+        buildozer android debug 2>&1 | tee build.log
+        BUILD_EXIT_CODE=${PIPESTATUS[0]}
+        echo "build_exit_code=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
+        if [ $BUILD_EXIT_CODE -eq 0 ]; then
+          echo "✅ Build completed successfully"
+        else
+          echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
+          echo "Check build.log for details"
+        fi
+        exit $BUILD_EXIT_CODE
       timeout-minutes: 150
       continue-on-error: true
     
@@ -55,17 +66,35 @@ jobs:
         echo "=== Buildozer directories ==="
         ls -lah .buildozer/ 2>/dev/null || echo "No .buildozer directory"
     
+    - name: Check for APK files
+      id: check_apk
+      if: always()
+      run: |
+        APK_COUNT=$(find bin -name "*.apk" -type f 2>/dev/null | wc -l)
+        if [ "$APK_COUNT" -gt 0 ]; then
+          echo "apk_exists=true" >> $GITHUB_OUTPUT
+          echo "✅ APK file(s) found: $APK_COUNT"
+          find bin -name "*.apk" -type f -exec ls -lh {} \;
+          APK_FILE=$(find bin -name "*.apk" -type f | head -1)
+          echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+        else
+          echo "apk_exists=false" >> $GITHUB_OUTPUT
+          echo "❌ No APK file found in bin/ directory"
+          echo "Checking if bin directory exists..."
+          ls -la bin/ 2>/dev/null || echo "bin/ directory does not exist"
+        fi
+    
     - name: Upload APK artifact
-      if: success()
+      if: steps.check_apk.outputs.apk_exists == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: concentration-tracker-apk
         path: bin/*.apk
         retention-days: 90
-        if-no-files-found: warn
+        if-no-files-found: error
     
-    - name: Create Release
-      if: success()
+    - name: Create Release (only if APK exists and tag is present)
+      if: steps.check_apk.outputs.apk_exists == 'true' && startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: bin/*.apk
@@ -74,3 +103,20 @@ jobs:
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Build Summary
+      if: always()
+      run: |
+        echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ steps.check_apk.outputs.apk_exists }}" == "true" ]; then
+          echo "✅ **APK built successfully!**" >> $GITHUB_STEP_SUMMARY
+          echo "📦 Download from Artifacts section" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **APK build failed**" >> $GITHUB_STEP_SUMMARY
+          echo "📋 Check build-log artifact for details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Common Issues:" >> $GITHUB_STEP_SUMMARY
+          echo "- OpenCV/MediaPipe may need custom Android recipes" >> $GITHUB_STEP_SUMMARY
+          echo "- Check build logs for specific errors" >> $GITHUB_STEP_SUMMARY
+        fi
