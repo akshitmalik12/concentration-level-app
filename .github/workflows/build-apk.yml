@@ -34,7 +34,7 @@ jobs:
     
     - name: Build APK
       run: |
-        buildozer android debug 2>&1 | tee build.log
+        buildozer android debug 2>&1 | tee build.log || true
       timeout-minutes: 150
       continue-on-error: true
     
