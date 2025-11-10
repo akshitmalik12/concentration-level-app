@@ -394,29 +394,57 @@ with st.sidebar:
 st.markdown("---")
 st.subheader("📹 Camera Feed")
 
-webrtc_ctx = webrtc_streamer(
-    key="concentration-tracker",
-    mode=WebRtcMode.SENDRECV,
-    rtc_configuration=RTCConfiguration({
-        "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-    }),
-    video_frame_callback=video_frame_callback,
-    media_stream_constraints={
-        "video": {
-            "width": {"ideal": 640},
-            "height": {"ideal": 480},
-            "facingMode": "user"
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.markdown("""
+    **To start the camera:**
+    1. Look for the **START** button below (in the video player)
+    2. Click **START** 
+    3. **Allow camera access** when your browser asks
+    4. The camera feed will appear here
+    """)
+    
+    webrtc_ctx = webrtc_streamer(
+        key="concentration-tracker",
+        mode=WebRtcMode.SENDRECV,
+        rtc_configuration=RTCConfiguration({
+            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+        }),
+        video_frame_callback=video_frame_callback,
+        media_stream_constraints={
+            "video": {
+                "width": {"ideal": 640},
+                "height": {"ideal": 480},
+                "facingMode": "user"
+            },
+            "audio": False
         },
-        "audio": False
-    },
-    async_processing=True,
-)
+        async_processing=True,
+    )
+
+with col2:
+    st.markdown("### Status")
+    if webrtc_ctx.state.playing:
+        st.success("✅ **Camera Active**")
+        st.caption("Camera is streaming")
+    elif webrtc_ctx.state.playing is None:
+        st.warning("⏳ **Waiting**")
+        st.caption("Click START button to begin")
+    else:
+        st.error("❌ **Error**")
+        st.caption("Camera not available")
 
 if webrtc_ctx.state.playing:
-    st.success("✅ Camera is active! Make sure you're facing the camera.")
-    st.info("💡 **Tip:** If you don't see the camera, check your browser's camera permissions.")
+    st.success("✅ Camera is active! Position yourself in front of the camera.")
 elif webrtc_ctx.state.playing is None:
-    st.warning("⏳ Click 'START' above to begin camera feed. Make sure to allow camera access when prompted.")
+    st.info("💡 **Tip:** The START button appears in the video player above. Click it and allow camera access.")
 else:
-    st.error("❌ Camera not available. Please check your camera permissions and try again.")
+    st.error("❌ Camera error. Please:")
+    st.markdown("""
+    1. Check browser camera permissions
+    2. Make sure no other app is using the camera
+    3. Try refreshing the page
+    4. For mobile: Use HTTPS (Streamlit Cloud provides this automatically)
+    """)
 
