@@ -138,8 +138,8 @@ def video_frame_callback(frame):
         img = cv2.flip(img, 1)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         results = face_mesh.process(img_rgb)
-    
-    if results.multi_face_landmarks:
+        
+        if results.multi_face_landmarks:
         landmarks = results.multi_face_landmarks[0].landmark
         
         if st.session_state.calibrating:
@@ -334,10 +334,11 @@ def video_frame_callback(frame):
                 st.session_state.alert_played = True
             cv2.putText(img, "NO FACE DETECTED", (w//2 - 150, h//2),
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-    
+        
         return av.VideoFrame.from_ndarray(img, format="bgr24")
     except Exception as e:
         # Return original frame if processing fails
+        print(f"Error in video callback: {e}")
         return frame
 
 # Streamlit UI
