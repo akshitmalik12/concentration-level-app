@@ -2,7 +2,6 @@ opencv-python
 mediapipe
 numpy
 matplotlib
-kivy
-buildozer
-cython
-flask
+streamlit
+streamlit-webrtc
+av
