@@ -33,15 +33,19 @@ FOREHEAD = 10
 LEFT_FACE = 234
 RIGHT_FACE = 454
 
-# Mediapipe Setup
+# Mediapipe Setup (will be initialized in callback)
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    refine_landmarks=True,
-    max_num_faces=1,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
 drawing_spec = mp.solutions.drawing_utils.DrawingSpec(thickness=1, circle_radius=1)
+
+# Global face_mesh instance (thread-safe for WebRTC)
+@st.cache_resource
+def get_face_mesh():
+    return mp_face_mesh.FaceMesh(
+        refine_landmarks=True,
+        max_num_faces=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
+    )
 
 class SmoothingFilter:
     def __init__(self, window_size=5):
@@ -122,14 +126,18 @@ if 'calibrating' not in st.session_state:
     st.session_state.alert_played = False
 
 def video_frame_callback(frame):
-    img = frame.to_ndarray(format="bgr24")
-    h, w = img.shape[:2]
-    current_time = time.time()
-    
-    # Flip for mirror effect
-    img = cv2.flip(img, 1)
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    results = face_mesh.process(img_rgb)
+    try:
+        img = frame.to_ndarray(format="bgr24")
+        h, w = img.shape[:2]
+        current_time = time.time()
+        
+        # Get face_mesh instance
+        face_mesh = get_face_mesh()
+        
+        # Flip for mirror effect
+        img = cv2.flip(img, 1)
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        results = face_mesh.process(img_rgb)
     
     if results.multi_face_landmarks:
         landmarks = results.multi_face_landmarks[0].landmark
@@ -327,7 +335,10 @@ def video_frame_callback(frame):
             cv2.putText(img, "NO FACE DETECTED", (w//2 - 150, h//2),
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
     
-    return av.VideoFrame.from_ndarray(img, format="bgr24")
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+    except Exception as e:
+        # Return original frame if processing fails
+        return frame
 
 # Streamlit UI
 st.set_page_config(page_title="Concentration Tracker", page_icon="📱", layout="wide")
@@ -371,14 +382,32 @@ with st.sidebar:
         st.rerun()
 
 # WebRTC streamer
+st.markdown("---")
+st.subheader("📹 Camera Feed")
+
 webrtc_ctx = webrtc_streamer(
     key="concentration-tracker",
     mode=WebRtcMode.SENDRECV,
-    rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
+    rtc_configuration=RTCConfiguration({
+        "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+    }),
     video_frame_callback=video_frame_callback,
-    media_stream_constraints={"video": True, "audio": False},
+    media_stream_constraints={
+        "video": {
+            "width": {"ideal": 640},
+            "height": {"ideal": 480},
+            "facingMode": "user"
+        },
+        "audio": False
+    },
+    async_processing=True,
 )
 
 if webrtc_ctx.state.playing:
-    st.info("🎥 Camera is active. Make sure you're facing the camera!")
+    st.success("✅ Camera is active! Make sure you're facing the camera.")
+    st.info("💡 **Tip:** If you don't see the camera, check your browser's camera permissions.")
+elif webrtc_ctx.state.playing is None:
+    st.warning("⏳ Click 'START' above to begin camera feed. Make sure to allow camera access when prompted.")
+else:
+    st.error("❌ Camera not available. Please check your camera permissions and try again.")
 
