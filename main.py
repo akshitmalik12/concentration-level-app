@@ -25,12 +25,14 @@ try:
     MediaPlayer = autoclass('android.media.MediaPlayer')
     Uri = autoclass('android.net.Uri')
     Context = autoclass('android.content.Context')
+    File = autoclass('java.io.File')
     ANDROID_AVAILABLE = True
 except ImportError:
     # Not on Android - will be available when built for Android
     ANDROID_AVAILABLE = False
     PythonActivity = None
     MediaPlayer = None
+    File = None
 
 # Constants (same as Final.py)
 CALIBRATION_DURATION = 8
@@ -109,19 +111,53 @@ def play_alert_android():
     
     try:
         activity = PythonActivity.mActivity
-        sound_path = os.path.join(os.path.dirname(__file__), 'alert.wav')
-        if not os.path.exists(sound_path):
-            sound_path = 'alert.wav'
+        # Try multiple paths for the sound file
+        sound_paths = [
+            os.path.join(os.path.dirname(__file__), 'alert.wav'),
+            'alert.wav',
+            os.path.join(activity.getFilesDir().getPath(), 'alert.wav'),
+        ]
         
-        if os.path.exists(sound_path):
+        # Try to get from assets first (Android assets)
+        sound_path = None
+        try:
+            if ANDROID_AVAILABLE:
+                AssetManager = autoclass('android.content.res.AssetManager')
+                asset_manager = activity.getAssets()
+                # Try to open from assets
+                sound_file = asset_manager.open('alert.wav')
+                # If we can open it, copy to internal storage and play
+                internal_path = os.path.join(activity.getFilesDir().getPath(), 'alert.wav')
+                with open(internal_path, 'wb') as f:
+                    f.write(sound_file.read())
+                sound_file.close()
+                sound_path = internal_path
+        except Exception as asset_error:
+            Logger.debug(f"Could not load from assets: {asset_error}")
+            # Fallback to file system
+            for path in sound_paths:
+                if os.path.exists(path):
+                    sound_path = path
+                    break
+        
+        if sound_path and os.path.exists(sound_path):
             media_player = MediaPlayer()
-            uri = Uri.parse(sound_path)
+            # Use file:// URI for local files
+            if sound_path.startswith('/'):
+                file_obj = File(sound_path)
+                uri = Uri.fromFile(file_obj)
+            else:
+                uri = Uri.parse(sound_path)
             media_player.setDataSource(activity, uri)
             media_player.prepare()
             media_player.start()
             Logger.info("Alert: Sound playing")
+        else:
+            Logger.warning(f"Alert: Sound file not found in any location: {sound_paths}")
     except Exception as e:
         Logger.error(f"Alert: Error playing sound: {e}")
+        import traceback
+        Logger.error(traceback.format_exc())
 
 class ConcentrationTrackerApp(App):
     def build(self):

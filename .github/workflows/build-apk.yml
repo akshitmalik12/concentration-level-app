@@ -23,24 +23,52 @@ jobs:
         sudo apt-get install -y \
           git zip unzip \
           openjdk-17-jdk \
-          python3-pip \
+          python3-pip python3-dev \
           autoconf libtool pkg-config \
           zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
           cmake libffi-dev libssl-dev \
           build-essential \
           curl wget \
-          libjpeg-dev libpng-dev \
+          libjpeg-dev libpng-dev libtiff-dev \
           libopencv-dev \
-          ant
+          ant \
+          unzip \
+          ccache \
+          python3-setuptools
+        echo "System dependencies installed"
+        java -version
+        javac -version
+        python3 --version
+        pip3 --version
     
     - name: Install Buildozer and dependencies
       run: |
-        pip install buildozer cython setuptools
+        pip install --upgrade pip setuptools wheel
+        pip install buildozer cython
+        echo "Buildozer version:"
+        buildozer --version || echo "Buildozer version check failed"
+        echo "Cython version:"
+        cython --version || echo "Cython version check failed"
     
-    - name: Initialize Buildozer (if needed)
+    - name: Validate buildozer.spec
       run: |
         if [ ! -f buildozer.spec ]; then
-          buildozer init
+          echo "❌ buildozer.spec not found!"
+          exit 1
+        fi
+        echo "✅ buildozer.spec found"
+        echo ""
+        echo "Build configuration:"
+        echo "==================="
+        grep "^title\|^package\.name\|^version\|^requirements\|^android\.api\|^android\.ndk" buildozer.spec || true
+        echo ""
+        
+    - name: Check for alert.wav file
+      run: |
+        if [ -f alert.wav ]; then
+          echo "✅ alert.wav found ($(du -h alert.wav | cut -f1))"
+        else
+          echo "⚠️  alert.wav not found - sound alerts may not work"
         fi
     
     - name: Build APK
@@ -48,6 +76,12 @@ jobs:
       run: |
         echo "Starting Buildozer build..."
         echo "This may take 30-60+ minutes..."
+        echo ""
+        echo "Build configuration:"
+        echo "- Python: 3.10"
+        echo "- Kivy: 2.1.0"
+        echo "- Requirements: $(grep '^requirements =' buildozer.spec | cut -d'=' -f2)"
+        echo ""
         set +e  # Don't exit on error, we want to capture the log
         buildozer android debug 2>&1 | tee build.log
         BUILD_EXIT_CODE=${PIPESTATUS[0]}
@@ -57,8 +91,20 @@ jobs:
           echo "✅ Build completed successfully"
         else
           echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
-          echo "📋 Last 50 lines of build log:"
-          tail -50 build.log || echo "Could not read build log"
+          echo ""
+          echo "📋 Error Analysis:"
+          echo "=================="
+          if [ -f build.log ]; then
+            echo ""
+            echo "Last 100 lines:"
+            tail -100 build.log
+            echo ""
+            echo "Key errors found:"
+            grep -i "error\|failed\|cannot\|unable\|missing" build.log | tail -20 || echo "No specific errors found in grep"
+            echo ""
+            echo "OpenCV/MediaPipe related errors:"
+            grep -i "opencv\|mediapipe\|recipe" build.log | tail -10 || echo "No OpenCV/MediaPipe errors found"
+          fi
         fi
       timeout-minutes: 150
       continue-on-error: true
@@ -107,15 +153,29 @@ jobs:
         retention-days: 90
         if-no-files-found: warn
     
-    - name: Show build log summary
+    - name: Extract build errors
+      id: extract_errors
       if: always() && steps.build_apk.outcome == 'failure'
       run: |
-        echo "## 🔍 Build Error Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
         if [ -f build.log ]; then
-          echo "### Last 100 lines of build log:" >> $GITHUB_STEP_SUMMARY
+          echo "### Key Errors Found:" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -100 build.log >> $GITHUB_STEP_SUMMARY || echo "Could not read build log" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract recipe errors
+          echo "=== Recipe/Requirements Errors ===" >> $GITHUB_STEP_SUMMARY
+          grep -i "recipe\|requirement\|no module\|cannot find\|package.*not found" build.log | head -10 >> $GITHUB_STEP_SUMMARY || echo "No recipe errors found" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "=== OpenCV/MediaPipe Errors ===" >> $GITHUB_STEP_SUMMARY
+          grep -i "opencv\|mediapipe\|cv2\|face_mesh" build.log | head -10 >> $GITHUB_STEP_SUMMARY || echo "No OpenCV/MediaPipe errors found" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "=== Compilation Errors ===" >> $GITHUB_STEP_SUMMARY
+          grep -i "error:\|failed\|fatal\|undefined" build.log | head -10 >> $GITHUB_STEP_SUMMARY || echo "No compilation errors found" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "=== Last 50 lines ===" >> $GITHUB_STEP_SUMMARY
+          tail -50 build.log >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
         fi
     
@@ -142,6 +202,13 @@ jobs:
           echo "1. Download the build-log artifact" >> $GITHUB_STEP_SUMMARY
           echo "2. Search for 'ERROR' or 'FAILED' in the log" >> $GITHUB_STEP_SUMMARY
           echo "3. Check Python-for-Android recipes for OpenCV/MediaPipe" >> $GITHUB_STEP_SUMMARY
+          echo "4. See BUILD_FIXES.md for detailed solutions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Quick Fixes:" >> $GITHUB_STEP_SUMMARY
+          echo "- **OpenCV/MediaPipe errors**: These require custom recipes. See BUILD_FIXES.md" >> $GITHUB_STEP_SUMMARY
+          echo "- **Recipe not found**: Add custom recipes or use alternative libraries" >> $GITHUB_STEP_SUMMARY
+          echo "- **NDK errors**: Check android.ndk version in buildozer.spec" >> $GITHUB_STEP_SUMMARY
+          echo "- **Memory errors**: Increase GitHub Actions runner resources" >> $GITHUB_STEP_SUMMARY
         fi
     
     - name: Fail job if build failed

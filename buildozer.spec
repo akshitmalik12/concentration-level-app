@@ -38,7 +38,8 @@ version = 1.0
 # comma separated e.g. requirements = sqlite3,kivy
 # WARNING: opencv-python and mediapipe require special Android builds
 # They may not build correctly with standard buildozer - may need custom recipes
-# If build fails, try building without opencv-python-headless and mediapipe first
+# NOTE: Using opencv and mediapipe without custom recipes will likely fail
+# Alternative: Use opencv4android or build custom recipes
 requirements = python3,kivy==2.1.0,numpy,pyjnius,plyer,opencv-python-headless,mediapipe
 
 # (str) Custom source folders for requirements
@@ -119,13 +120,16 @@ android.gradle_dependencies =
 p4a.branch = master
 
 # (str) Android NDK version (optional, buildozer will download if not specified)
-# android.ndk = 25b
+android.ndk = 25b
 
 # (str) Android API level (minimum SDK version)
-# android.api = 27
+android.api = 33
 
 # (str) Android minimum SDK version
-# android.minapi = 21
+android.minapi = 21
+
+# (str) Android target SDK version
+android.target_api = 33
 
 # (str) The directory where the python-for-android project lives
 #p4a.source_dir = ../python-for-android
