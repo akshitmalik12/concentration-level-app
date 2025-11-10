@@ -417,16 +417,53 @@ def api_status():
         })
 
 if __name__ == '__main__':
+    import socket
+    
+    # Find available port
+    def find_free_port(start_port=5001, max_attempts=10):
+        for port in range(start_port, start_port + max_attempts):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(('', port))
+                    return port
+            except OSError:
+                continue
+        return None
+    
+    # Get IP address
+    def get_local_ip():
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            return "YOUR_IP"
+    
+    port = find_free_port(5001)
+    if port is None:
+        print("❌ Error: Could not find an available port")
+        exit(1)
+    
+    ip = get_local_ip()
+    
     print("=" * 60)
     print("Concentration Tracker - Web Version")
     print("=" * 60)
-    print("\n📱 To access on your phone:")
-    print("1. Make sure your phone is on the same WiFi network")
-    print("2. Find your computer's IP address:")
-    print("   - macOS/Linux: ifconfig | grep 'inet '")
-    print("   - Windows: ipconfig")
-    print("3. Open browser on phone and go to: http://YOUR_IP:5000")
-    print("\n🚀 Starting server...")
+    print(f"\n📱 To access on your phone:")
+    print(f"1. Make sure your phone is on the same WiFi network")
+    print(f"2. Open browser on phone and go to:")
+    print(f"")
+    print(f"   http://{ip}:{port}")
+    print(f"")
+    print(f"3. Allow camera access when prompted")
+    print(f"\n🚀 Starting server on port {port}...")
     print("=" * 60)
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    print(f"\nPress Ctrl+C to stop the server\n")
+    
+    try:
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+    except KeyboardInterrupt:
+        print("\n\n👋 Server stopped. Goodbye!")
 

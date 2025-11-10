@@ -24,11 +24,13 @@ The script will show it, or run:
 
 ### Step 4: Open on your phone
 1. Make sure your phone is on the **same WiFi network** as your computer
-2. Open any web browser on your phone (Chrome, Safari, etc.)
-3. Go to: `http://YOUR_IP:5000`
-   - Example: `http://192.168.1.5:5000`
-4. **Allow camera access** when prompted
-5. Done! The app will work in your browser
+2. The server will automatically find an available port and show you the URL
+3. Open any web browser on your phone (Chrome, Safari, etc.)
+4. Go to the URL shown in the terminal (usually `http://192.168.1.5:5001` or similar)
+5. **Allow camera access** when prompted
+6. Done! The app will work in your browser
+
+**Note:** If port 5000 is in use (common on macOS due to AirPlay), the app will automatically use port 5001 or higher.
 
 ### Features:
 - ✅ Real-time concentration tracking

@@ -4,28 +4,22 @@ echo "🚀 Starting Concentration Tracker for Mobile"
 echo "=============================================="
 echo ""
 
-# Get IP address
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    IP=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1)
-elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    # Linux
-    IP=$(hostname -I | awk '{print $1}')
-else
-    IP="YOUR_IP_HERE"
+# Check if Flask is installed
+if ! python3 -c "import flask" 2>/dev/null; then
+    echo "❌ Flask is not installed!"
+    echo "📦 Installing Flask..."
+    pip install flask
+    echo ""
 fi
 
-echo "📱 To access on your phone:"
-echo "1. Make sure your phone is on the same WiFi network"
-echo "2. Open browser on phone and go to:"
-echo ""
-echo "   http://$IP:5000"
-echo ""
-echo "3. Allow camera access when prompted"
-echo ""
-echo "Press Ctrl+C to stop the server"
-echo ""
-echo "Starting server..."
+# Check if port 5000 is in use and kill it
+if lsof -ti:5000 > /dev/null 2>&1; then
+    echo "⚠️  Port 5000 is in use. Cleaning up..."
+    lsof -ti:5000 | xargs kill -9 2>/dev/null
+    sleep 1
+fi
+
+echo "✅ Starting server (will find available port automatically)..."
 echo ""
 
 python3 app_web.py
