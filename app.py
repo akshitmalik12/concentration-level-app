@@ -140,200 +140,200 @@ def video_frame_callback(frame):
         results = face_mesh.process(img_rgb)
         
         if results.multi_face_landmarks:
-        landmarks = results.multi_face_landmarks[0].landmark
-        
-        if st.session_state.calibrating:
-            left_ear = compute_EAR(landmarks, LEFT_EYE, w, h)
-            right_ear = compute_EAR(landmarks, RIGHT_EYE, w, h)
-            avg_ear = (left_ear + right_ear) / 2
-            st.session_state.ear_values.append(avg_ear)
+            landmarks = results.multi_face_landmarks[0].landmark
             
-            face_tilt_x, face_tilt_y = compute_face_orientation(landmarks, w, h)
-            st.session_state.face_orientations_x.append(face_tilt_x)
-            st.session_state.face_orientations_y.append(face_tilt_y)
-            
-            elapsed = current_time - st.session_state.calibration_start
-            progress = min(1.0, elapsed / CALIBRATION_DURATION)
-            
-            if elapsed >= CALIBRATION_DURATION and len(st.session_state.ear_values) > 0:
-                st.session_state.ear_baseline = np.mean(st.session_state.ear_values)
-                st.session_state.ear_std = np.std(st.session_state.ear_values)
-                st.session_state.adaptive_threshold = max(
-                    st.session_state.ear_baseline * EAR_DROP_THRESHOLD,
-                    st.session_state.ear_baseline - 2 * st.session_state.ear_std
-                )
-                st.session_state.neutral_face_x = np.mean(st.session_state.face_orientations_x)
-                st.session_state.neutral_face_y = np.mean(st.session_state.face_orientations_y)
-                st.session_state.calibrating = False
-                st.session_state.session_start_time = current_time
-                st.session_state.concentration = 100.0
-                st.session_state.concentration_filter = SmoothingFilter(SMOOTHING_WINDOW)
-                for _ in range(SMOOTHING_WINDOW):
-                    st.session_state.concentration_filter.update(100.0)
-            
-            # Draw calibration UI
-            overlay = img.copy()
-            cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
-            cv2.addWeighted(overlay, 0.5, img, 0.5, 0, img)
-            
-            box_width, box_height = 400, 200
-            box_x, box_y = (w - box_width) // 2, (h - box_height) // 2
-            cv2.rectangle(img, (box_x, box_y), (box_x + box_width, box_y + box_height), (50, 50, 50), -1)
-            cv2.rectangle(img, (box_x, box_y), (box_x + box_width, box_y + box_height), (100, 200, 255), 3)
-            
-            title = "CALIBRATING..."
-            cv2.putText(img, title, (box_x + 50, box_y + 40),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 200, 255), 2)
-            
-            bar_x, bar_y = box_x + 50, box_y + 100
-            bar_width, bar_height = box_width - 100, 30
-            cv2.rectangle(img, (bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height), (40, 40, 40), -1)
-            fill_width = int(bar_width * progress)
-            cv2.rectangle(img, (bar_x, bar_y), (bar_x + fill_width, bar_y + bar_height), (100, 200, 255), -1)
-            
-            progress_text = f"{int(progress * 100)}%"
-            cv2.putText(img, progress_text, (box_x + 150, box_y + 125),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            
-            time_remaining = max(0, CALIBRATION_DURATION - elapsed)
-            time_text = f"{int(time_remaining)}s remaining"
-            cv2.putText(img, time_text, (box_x + 80, box_y + 170),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
-        else:
-            # Main tracking phase
-            session_time = current_time - st.session_state.session_start_time
-            
-            left_ear = compute_EAR(landmarks, LEFT_EYE, w, h)
-            right_ear = compute_EAR(landmarks, RIGHT_EYE, w, h)
-            avg_ear = (left_ear + right_ear) / 2
-            avg_ear = st.session_state.ear_filter.update(avg_ear)
-            
-            face_tilt_x, face_tilt_y = compute_face_orientation(landmarks, w, h)
-            face_tilt_x = st.session_state.face_tilt_x_filter.update(face_tilt_x)
-            face_tilt_y = st.session_state.face_tilt_y_filter.update(face_tilt_y)
-            
-            deviation_x = abs(face_tilt_x - st.session_state.neutral_face_x)
-            deviation_y = abs(face_tilt_y - st.session_state.neutral_face_y)
-            
-            eyes_closed = avg_ear < st.session_state.adaptive_threshold
-            
-            dt = current_time - st.session_state.prev_time
-            st.session_state.prev_time = current_time
-            
-            # Calculate concentration (same logic as Final.py)
-            orientation_factor = 100.0
-            if deviation_x > FACE_TILT_THRESHOLD_X or deviation_y > FACE_TILT_THRESHOLD_Y:
-                max_deviation_ratio = max(deviation_x / FACE_TILT_THRESHOLD_X, deviation_y / FACE_TILT_THRESHOLD_Y)
-                excess_deviation = max_deviation_ratio - 1.0
+            if st.session_state.calibrating:
+                left_ear = compute_EAR(landmarks, LEFT_EYE, w, h)
+                right_ear = compute_EAR(landmarks, RIGHT_EYE, w, h)
+                avg_ear = (left_ear + right_ear) / 2
+                st.session_state.ear_values.append(avg_ear)
                 
-                if excess_deviation > 0.5:
-                    effective_excess = excess_deviation - 0.5
-                    
-                    if effective_excess < 0.5:
-                        penalty = effective_excess * 30
-                    elif effective_excess < 1.5:
-                        penalty = 15 + (effective_excess - 0.5) * 25
-                    elif effective_excess < 2.5:
-                        penalty = 40 + (effective_excess - 1.5) * 15
-                    else:
-                        penalty = 55 + min(20, (effective_excess - 2.5) * 0.5)
-                    
-                    orientation_factor = max(25, 100 - penalty)
-            
-            eye_factor = 100.0
-            if eyes_closed:
-                if st.session_state.eyes_closed_start is None:
-                    st.session_state.eyes_closed_start = current_time
-                closed_duration = current_time - st.session_state.eyes_closed_start
-                if closed_duration > EYE_CLOSED_TIME_LIMIT:
-                    penalty = min(50, closed_duration * CONCENTRATION_DROP_RATE * 0.8)
-                    eye_factor = max(50, 100 - penalty)
-            else:
-                st.session_state.eyes_closed_start = None
-                if orientation_factor >= 90:
-                    eye_factor = min(100, st.session_state.concentration + CONCENTRATION_RECOVERY_RATE * dt)
-                else:
-                    eye_factor = 100.0
-            
-            ear_factor = 100.0
-            if avg_ear < st.session_state.ear_baseline:
-                ear_ratio = avg_ear / (st.session_state.ear_baseline + 1e-6)
-                if ear_ratio < 0.85:
-                    penalty = (0.85 - ear_ratio) * 40
-                    ear_factor = max(60, 100 - penalty)
-            
-            st.session_state.concentration = 0.15 * eye_factor + 0.80 * orientation_factor + 0.05 * ear_factor
-            st.session_state.concentration = st.session_state.concentration_filter.update(st.session_state.concentration)
-            st.session_state.concentration = max(30, min(100, st.session_state.concentration))
-            
-            # Alert system
-            if st.session_state.concentration < 50 and not st.session_state.alert_played:
-                play_alert_sound()
-                st.session_state.alert_played = True
-            elif st.session_state.concentration >= 50:
-                st.session_state.alert_played = False
-            
-            # Draw main UI
-            bar_height = 60
-            cv2.rectangle(img, (0, 0), (w, bar_height), (30, 30, 30), -1)
-            
-            concentration_text = f"{int(st.session_state.concentration)}%"
-            if st.session_state.concentration >= 70:
-                color = (0, 255, 100)
-                status = "FOCUSED"
-            elif st.session_state.concentration >= 50:
-                color = (0, 200, 255)
-                status = "MODERATE"
-            else:
-                color = (0, 100, 255)
-                status = "DISTRACTED"
-            
-            cv2.putText(img, concentration_text, (10, 40),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, color, 3)
-            cv2.putText(img, status, (150, 40),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-            
-            bar_x, bar_y = 10, 50
-            bar_width = w - 20
-            cv2.rectangle(img, (bar_x, bar_y), (bar_x + bar_width, bar_y + 8), (50, 50, 50), -1)
-            fill_width = int(bar_width * (st.session_state.concentration / 100))
-            cv2.rectangle(img, (bar_x, bar_y), (bar_x + fill_width, bar_y + 8), color, -1)
-            
-            time_text = f"Time: {int(session_time // 60):02d}:{int(session_time % 60):02d}"
-            cv2.putText(img, time_text, (w - 150, 30),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
-            
-            if st.session_state.concentration < 50:
-                flash_speed = 6
-                alpha = 0.4 + 0.4 * np.sin(time.time() * flash_speed)
+                face_tilt_x, face_tilt_y = compute_face_orientation(landmarks, w, h)
+                st.session_state.face_orientations_x.append(face_tilt_x)
+                st.session_state.face_orientations_y.append(face_tilt_y)
+                
+                elapsed = current_time - st.session_state.calibration_start
+                progress = min(1.0, elapsed / CALIBRATION_DURATION)
+                
+                if elapsed >= CALIBRATION_DURATION and len(st.session_state.ear_values) > 0:
+                    st.session_state.ear_baseline = np.mean(st.session_state.ear_values)
+                    st.session_state.ear_std = np.std(st.session_state.ear_values)
+                    st.session_state.adaptive_threshold = max(
+                        st.session_state.ear_baseline * EAR_DROP_THRESHOLD,
+                        st.session_state.ear_baseline - 2 * st.session_state.ear_std
+                    )
+                    st.session_state.neutral_face_x = np.mean(st.session_state.face_orientations_x)
+                    st.session_state.neutral_face_y = np.mean(st.session_state.face_orientations_y)
+                    st.session_state.calibrating = False
+                    st.session_state.session_start_time = current_time
+                    st.session_state.concentration = 100.0
+                    st.session_state.concentration_filter = SmoothingFilter(SMOOTHING_WINDOW)
+                    for _ in range(SMOOTHING_WINDOW):
+                        st.session_state.concentration_filter.update(100.0)
+                
+                # Draw calibration UI
                 overlay = img.copy()
-                cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 255), -1)
-                cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+                cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
+                cv2.addWeighted(overlay, 0.5, img, 0.5, 0, img)
                 
-                warning_text = "PLEASE FOCUS!"
-                warning_size = cv2.getTextSize(warning_text, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 4)[0]
-                cv2.putText(img, warning_text, ((w - warning_size[0]) // 2 + 2, h // 2 + 2),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 6)
-                cv2.putText(img, warning_text, ((w - warning_size[0]) // 2, h // 2),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 4)
-        
-        # Draw face landmarks
-        mp.solutions.drawing_utils.draw_landmarks(
-            image=img,
-            landmark_list=results.multi_face_landmarks[0],
-            connections=mp.solutions.face_mesh.FACEMESH_TESSELATION,
-            landmark_drawing_spec=drawing_spec,
-            connection_drawing_spec=drawing_spec,
-        )
-    else:
-        # No face detected
-        if not st.session_state.calibrating:
-            st.session_state.concentration = max(30, st.session_state.concentration - 5)
-            if st.session_state.concentration < 50 and not st.session_state.alert_played:
-                play_alert_sound()
-                st.session_state.alert_played = True
-            cv2.putText(img, "NO FACE DETECTED", (w//2 - 150, h//2),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                box_width, box_height = 400, 200
+                box_x, box_y = (w - box_width) // 2, (h - box_height) // 2
+                cv2.rectangle(img, (box_x, box_y), (box_x + box_width, box_y + box_height), (50, 50, 50), -1)
+                cv2.rectangle(img, (box_x, box_y), (box_x + box_width, box_y + box_height), (100, 200, 255), 3)
+                
+                title = "CALIBRATING..."
+                cv2.putText(img, title, (box_x + 50, box_y + 40),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 200, 255), 2)
+                
+                bar_x, bar_y = box_x + 50, box_y + 100
+                bar_width, bar_height = box_width - 100, 30
+                cv2.rectangle(img, (bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height), (40, 40, 40), -1)
+                fill_width = int(bar_width * progress)
+                cv2.rectangle(img, (bar_x, bar_y), (bar_x + fill_width, bar_y + bar_height), (100, 200, 255), -1)
+                
+                progress_text = f"{int(progress * 100)}%"
+                cv2.putText(img, progress_text, (box_x + 150, box_y + 125),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                
+                time_remaining = max(0, CALIBRATION_DURATION - elapsed)
+                time_text = f"{int(time_remaining)}s remaining"
+                cv2.putText(img, time_text, (box_x + 80, box_y + 170),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
+            else:
+                # Main tracking phase
+                session_time = current_time - st.session_state.session_start_time
+                
+                left_ear = compute_EAR(landmarks, LEFT_EYE, w, h)
+                right_ear = compute_EAR(landmarks, RIGHT_EYE, w, h)
+                avg_ear = (left_ear + right_ear) / 2
+                avg_ear = st.session_state.ear_filter.update(avg_ear)
+                
+                face_tilt_x, face_tilt_y = compute_face_orientation(landmarks, w, h)
+                face_tilt_x = st.session_state.face_tilt_x_filter.update(face_tilt_x)
+                face_tilt_y = st.session_state.face_tilt_y_filter.update(face_tilt_y)
+                
+                deviation_x = abs(face_tilt_x - st.session_state.neutral_face_x)
+                deviation_y = abs(face_tilt_y - st.session_state.neutral_face_y)
+                
+                eyes_closed = avg_ear < st.session_state.adaptive_threshold
+                
+                dt = current_time - st.session_state.prev_time
+                st.session_state.prev_time = current_time
+                
+                # Calculate concentration (same logic as Final.py)
+                orientation_factor = 100.0
+                if deviation_x > FACE_TILT_THRESHOLD_X or deviation_y > FACE_TILT_THRESHOLD_Y:
+                    max_deviation_ratio = max(deviation_x / FACE_TILT_THRESHOLD_X, deviation_y / FACE_TILT_THRESHOLD_Y)
+                    excess_deviation = max_deviation_ratio - 1.0
+                    
+                    if excess_deviation > 0.5:
+                        effective_excess = excess_deviation - 0.5
+                        
+                        if effective_excess < 0.5:
+                            penalty = effective_excess * 30
+                        elif effective_excess < 1.5:
+                            penalty = 15 + (effective_excess - 0.5) * 25
+                        elif effective_excess < 2.5:
+                            penalty = 40 + (effective_excess - 1.5) * 15
+                        else:
+                            penalty = 55 + min(20, (effective_excess - 2.5) * 0.5)
+                        
+                        orientation_factor = max(25, 100 - penalty)
+                
+                eye_factor = 100.0
+                if eyes_closed:
+                    if st.session_state.eyes_closed_start is None:
+                        st.session_state.eyes_closed_start = current_time
+                    closed_duration = current_time - st.session_state.eyes_closed_start
+                    if closed_duration > EYE_CLOSED_TIME_LIMIT:
+                        penalty = min(50, closed_duration * CONCENTRATION_DROP_RATE * 0.8)
+                        eye_factor = max(50, 100 - penalty)
+                else:
+                    st.session_state.eyes_closed_start = None
+                    if orientation_factor >= 90:
+                        eye_factor = min(100, st.session_state.concentration + CONCENTRATION_RECOVERY_RATE * dt)
+                    else:
+                        eye_factor = 100.0
+                
+                ear_factor = 100.0
+                if avg_ear < st.session_state.ear_baseline:
+                    ear_ratio = avg_ear / (st.session_state.ear_baseline + 1e-6)
+                    if ear_ratio < 0.85:
+                        penalty = (0.85 - ear_ratio) * 40
+                        ear_factor = max(60, 100 - penalty)
+                
+                st.session_state.concentration = 0.15 * eye_factor + 0.80 * orientation_factor + 0.05 * ear_factor
+                st.session_state.concentration = st.session_state.concentration_filter.update(st.session_state.concentration)
+                st.session_state.concentration = max(30, min(100, st.session_state.concentration))
+                
+                # Alert system
+                if st.session_state.concentration < 50 and not st.session_state.alert_played:
+                    play_alert_sound()
+                    st.session_state.alert_played = True
+                elif st.session_state.concentration >= 50:
+                    st.session_state.alert_played = False
+                
+                # Draw main UI
+                bar_height = 60
+                cv2.rectangle(img, (0, 0), (w, bar_height), (30, 30, 30), -1)
+                
+                concentration_text = f"{int(st.session_state.concentration)}%"
+                if st.session_state.concentration >= 70:
+                    color = (0, 255, 100)
+                    status = "FOCUSED"
+                elif st.session_state.concentration >= 50:
+                    color = (0, 200, 255)
+                    status = "MODERATE"
+                else:
+                    color = (0, 100, 255)
+                    status = "DISTRACTED"
+                
+                cv2.putText(img, concentration_text, (10, 40),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, color, 3)
+                cv2.putText(img, status, (150, 40),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+                
+                bar_x, bar_y = 10, 50
+                bar_width = w - 20
+                cv2.rectangle(img, (bar_x, bar_y), (bar_x + bar_width, bar_y + 8), (50, 50, 50), -1)
+                fill_width = int(bar_width * (st.session_state.concentration / 100))
+                cv2.rectangle(img, (bar_x, bar_y), (bar_x + fill_width, bar_y + 8), color, -1)
+                
+                time_text = f"Time: {int(session_time // 60):02d}:{int(session_time % 60):02d}"
+                cv2.putText(img, time_text, (w - 150, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
+                
+                if st.session_state.concentration < 50:
+                    flash_speed = 6
+                    alpha = 0.4 + 0.4 * np.sin(time.time() * flash_speed)
+                    overlay = img.copy()
+                    cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 255), -1)
+                    cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+                    
+                    warning_text = "PLEASE FOCUS!"
+                    warning_size = cv2.getTextSize(warning_text, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 4)[0]
+                    cv2.putText(img, warning_text, ((w - warning_size[0]) // 2 + 2, h // 2 + 2),
+                               cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 6)
+                    cv2.putText(img, warning_text, ((w - warning_size[0]) // 2, h // 2),
+                               cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 4)
+            
+            # Draw face landmarks
+            mp.solutions.drawing_utils.draw_landmarks(
+                image=img,
+                landmark_list=results.multi_face_landmarks[0],
+                connections=mp.solutions.face_mesh.FACEMESH_TESSELATION,
+                landmark_drawing_spec=drawing_spec,
+                connection_drawing_spec=drawing_spec,
+            )
+        else:
+            # No face detected
+            if not st.session_state.calibrating:
+                st.session_state.concentration = max(30, st.session_state.concentration - 5)
+                if st.session_state.concentration < 50 and not st.session_state.alert_played:
+                    play_alert_sound()
+                    st.session_state.alert_played = True
+                cv2.putText(img, "NO FACE DETECTED", (w//2 - 150, h//2),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         
         return av.VideoFrame.from_ndarray(img, format="bgr24")
     except Exception as e:
@@ -346,6 +346,14 @@ st.set_page_config(page_title="Concentration Tracker", page_icon="📱", layout=
 
 st.title("📱 Concentration Tracker")
 st.markdown("### Real-time focus monitoring using your camera")
+
+st.info("""
+**📋 Instructions:**
+1. Click the **START** button below to begin
+2. **Allow camera access** when your browser prompts you
+3. Look directly at the camera and wait for calibration (8 seconds)
+4. The app will track your concentration in real-time
+""")
 
 # Sidebar
 with st.sidebar:
