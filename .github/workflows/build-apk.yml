@@ -20,7 +20,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev
+        sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev build-essential
     
     - name: Install Buildozer
       run: |
@@ -29,7 +29,8 @@ jobs:
     - name: Build APK
       run: |
         buildozer android debug
-      timeout-minutes: 90
+      timeout-minutes: 120
+      continue-on-error: false
     
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
@@ -38,6 +39,13 @@ jobs:
         name: concentration-tracker-apk
         path: bin/*.apk
         retention-days: 90
+    
+    - name: List build artifacts
+      if: always()
+      run: |
+        echo "Build artifacts:"
+        ls -lah bin/ || echo "No bin directory found"
+        find . -name "*.apk" -type f || echo "No APK files found"
     
     - name: Create Release
       if: success()
